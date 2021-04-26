@@ -180,6 +180,57 @@ def read_json_df(data_generator, selected_columns=None, read_in_string=False):
     return json_to_dataframe(lines, selected_columns, read_in_string)
 
 
+def read_json(data_generator, selected_columns=None, read_in_string=False):
+    """
+    This function returns the lines of a json. The source of input to this 
+    function is either a file or a list of JSON structured strings. If the 
+    file path is given as input, the file is expected to have one JSON 
+    structures in each line. The lines that are not valid json will be ignored. 
+    Therefore, a file with pretty printed JSON objects will not be considered 
+    valid JSON. If the input is a data list, it is expected to be a list of 
+    strings where each string is a valid JSON object. if the individual object 
+    is not valid JSON, it will be ignored.
+
+    NOTE: both data_list and file_path cannot be passed at the same time.
+
+    :param data_generator: The generator you want to read.
+    :type data_generator: generator
+    :param selected_columns: a list of keys to be processed
+    :type selected_columns: list(str)
+    :param read_in_string: if True, all the values in dataframe will be
+        converted to string
+    :type read_in_string: bool
+    :return: returns the lines of a json file
+    :rtype: list(dict)
+    """
+
+    lines = list()
+    k = 0
+    while True:
+        try:
+            raw_line = next(data_generator)
+        except StopIteration:
+            raw_line = None
+
+        if not raw_line:
+            break
+        try:
+            obj = unicode_to_str(
+                json.loads(raw_line,
+                           object_hook=unicode_to_str,
+                           object_pairs_hook=OrderedDict),
+                ignore_dicts=True
+            )
+            lines.append(obj)
+        except ValueError:
+            pass
+            # To ignore malformatted lines.
+        k += 1
+    if not lines and k:
+        raise ValueError('No JSON data could be read from these data.')
+    return lines
+
+
 def read_csv_df(file_path, delimiter, header, selected_columns=[],
                 read_in_string=False, encoding='utf-8'):
     """
@@ -288,7 +339,6 @@ def detect_file_encoding(file_path, buffer_size=1024, max_lines=20):
     :return: encoding type
     :rtype: str
     """
-
     detector = UniversalDetector()
     line_count = 0
     with open(file_path, 'rb') as input_file:
@@ -301,7 +351,47 @@ def detect_file_encoding(file_path, buffer_size=1024, max_lines=20):
     encoding = detector.result["encoding"]
 
     # Typical file representation is utf-8 instead of ascii, treat as such.
-    if not encoding or encoding == 'ascii':
+    if not encoding or encoding.lower() in ['ascii', 'windows-1254']:
+        encoding = 'utf-8'
+
+    # Check if encoding can be used to decode without throwing an error
+    def _decode_is_valid(encoding):
+        try: 
+            with open(file_path, encoding=encoding) as input_file:
+                input_file.read(1024*1024)
+                return True
+        except: return False
+
+    if not _decode_is_valid(encoding):
+        try:
+            from charset_normalizer import CharsetNormalizerMatches as CnM
+            
+            # Try with small sample 
+            with open(file_path, 'rb') as input_file:
+                raw_data = input_file.read(10000)
+                result = CnM.from_bytes(raw_data, steps=5, 
+                                        chunk_size=512, threshold=0.2,
+                                        cp_isolation=None, cp_exclusion=None,
+                                        preemptive_behaviour=True, explain=False)
+                result = result.best().first()
+            if result: encoding = result.encoding
+
+            # Try again with full sample
+            if not _decode_is_valid(encoding): 
+                with open(file_path, 'rb') as input_file:
+                    raw_data = input_file.read(max_lines*buffer_size)
+                    result = CnM.from_bytes(raw_data, steps=max_lines, 
+                                            chunk_size=buffer_size, threshold=0.2,
+                                            cp_isolation=None, cp_exclusion=None,
+                                            preemptive_behaviour=True, explain=False)
+                    result = result.best().first()
+                if result: encoding = result.encoding
+
+        except:
+            print("Install charset_normalizer for improved file encoding detection")
+
+    # If no encoding is still found, default to utf-8
+    if not encoding:
         encoding = 'utf-8'
     return encoding.lower()
 

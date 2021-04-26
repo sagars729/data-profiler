@@ -5,9 +5,9 @@ import numpy as np
 
 def calculate_quantiles(num_quantile_groups, quantiles):
     len_quant = len(quantiles)
-    if not (num_quantile_groups and 0 < num_quantile_groups <= len_quant):
+    if not (num_quantile_groups and 0 < num_quantile_groups <= (len_quant + 1)):
         num_quantile_groups = 4
-    quant_multiplier = len_quant/num_quantile_groups
+    quant_multiplier = (len_quant + 1) / num_quantile_groups
     # quantile is one less than group
     # Goes from zero (inclusive) to number of groups (exclusive)
     # +1 because 0 + 1 * multiplier = correct first quantile
@@ -116,7 +116,7 @@ def _prepare_report(report, output_format=None, omit_keys=[]):
                         if prior_key_layer == '*' or prior_key_layer == key:
                             next_layer_omit_keys.append(next_key_layer)
 
-            # Recusively add keys to the final report
+            # Recursively add keys to the final report
             fmt_report[key] = _prepare_report(value, output_format,
                                               next_layer_omit_keys)
             
